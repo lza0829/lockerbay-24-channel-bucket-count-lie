@@ -1,0 +1,9 @@
+{
+  "events": [
+    {"id": "E5", "cabinet_id": "CAB-A", "cell_id": "CAB-A-03", "event_type": "drop", "event_ts": "2026-11-19T02:00:00Z", "tracking_no": "TN1003", "channel": "primary", "payload": {}},
+    {"id": "E6", "cabinet_id": "CAB-A", "cell_id": "CAB-A-04", "event_type": "drop", "event_ts": "2026-11-19T02:05:00Z", "tracking_no": "TN1004", "channel": "secondary", "payload": {"source": "manual-kiosk", "note": "副通道补录投柜"}},
+    {"id": "E7", "cabinet_id": "CAB-B", "cell_id": "CAB-B-01", "event_type": "pickup", "event_ts": "2026-11-19T03:00:00Z", "tracking_no": "TN2001", "channel": "secondary", "payload": {"source": "manual-kiosk", "note": "副通道补录取件"}},
+    {"id": "E8", "cabinet_id": "CAB-B", "cell_id": "CAB-B-02", "event_type": "drop", "event_ts": "2026-11-19T03:10:00Z", "tracking_no": "TN2002", "channel": "primary", "payload": {}},
+    {"id": "E9", "cabinet_id": "CAB-A", "cell_id": "CAB-A-01", "event_type": "drop", "event_ts": "2026-11-19T04:00:00Z", "tracking_no": "TN1005", "channel": "tertiary", "payload": {"source": "partner-feed"}}
+  ]
+}
