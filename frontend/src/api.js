@@ -19,5 +19,8 @@ export const api = {
   setOverdue: (overdue_hours) =>
     req('/api/settings/overdue-hours', { method: 'PUT', body: JSON.stringify({ overdue_hours }) }),
   ingest: () => req('/api/ingest/run', { method: 'POST', body: '{}' }),
-  channelBuckets: () => req('/api/channel-buckets'),
+  channelBuckets: (batch_id) =>
+    req(batch_id ? `/api/channel-buckets?batch_id=${encodeURIComponent(batch_id)}` : '/api/channel-buckets'),
+  channelBucketProofs: () => req('/api/channel-bucket-proofs'),
+  channelBucketVerify: () => req('/api/channel-bucket-proofs/verify'),
 }

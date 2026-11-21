@@ -128,14 +128,49 @@ def put_overdue(body: dict = Body(...)):
     finally:
         conn.close()
 
-# --- plant routes ---
+# --- channel bucket proof routes ---
 from app.modules import channel_bucket_proof as bucket_proof
 
+
 @router.get("/channel-buckets")
-def channel_buckets():
+def channel_buckets(batch_id: str | None = None):
+    """只读：最新批（或指定批）固化的通道分桶证明快照，恒带 secondary 键。"""
     conn = connect()
     try:
-        return bucket_proof.bucket_for_batch(conn)
+        proof = bucket_proof.proof_for_batch(conn, batch_id)
+        if proof is None:
+            # 尚无成功批：返回零值空桶，键结构与正式证明一致，禁止缺 secondary 键
+            return {
+                "batch_id": batch_id,
+                "primary_n": 0,
+                "secondary_n": 0,
+                "total_n": 0,
+                "held_secondary_ids": [],
+                "created_at": None,
+                "proven": False,
+            }
+        proof["proven"] = True
+        return proof
+    finally:
+        conn.close()
+
+
+@router.get("/channel-bucket-proofs")
+def channel_bucket_proofs():
+    """只读：全部批次的不可变通道分桶证明列表。"""
+    conn = connect()
+    try:
+        return bucket_proof.list_proofs(conn)
+    finally:
+        conn.close()
+
+
+@router.get("/channel-bucket-proofs/verify")
+def verify_channel_bucket_proofs():
+    """只读核证：分桶证明 × 搁置集合 × 正式事件表 × 批回执全量对撞。"""
+    conn = connect()
+    try:
+        return bucket_proof.verify(conn)
     finally:
         conn.close()
 

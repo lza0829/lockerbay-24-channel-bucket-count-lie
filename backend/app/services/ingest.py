@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from uuid import uuid4
 
 from app.db import FIXTURES_DIR, connect
-from app.modules import secondary_channel_hold
+from app.modules import channel_bucket_proof, secondary_channel_hold
 
 
 def run_batch():
@@ -18,12 +18,17 @@ def run_batch():
     accepted = 0
     held = 0
     try:
+        # 提交形态（择一）：装载同事务分流并写分桶证明，缺一回滚。
         # 失败闭：入口按 channel 分流。非 primary（含 secondary）剔入副通道搁置，
         # 原 channel 与载荷留存，不参与下方任何占用物化；仅 primary 走既有开/关占用。
         primary_events, held_events = secondary_channel_hold.route_events(events)
+
+        # 1) 搁置落库（同事务，失败即抛 → 整批回滚，不留半截分流）
         for ev in held_events:
             if secondary_channel_hold.hold_event(conn, ev, batch_id, now):
                 held += 1
+
+        # 2) 主通道物化（同事务）。accepted 只统计 primary，secondary 永不计入。
         for ev in primary_events:
             cur = conn.execute(
                 "INSERT OR IGNORE INTO parcel_events(id, cabinet_id, cell_id, event_type, event_ts, tracking_no, payload_json, channel) VALUES (?,?,?,?,?,?,?,?)",
@@ -60,20 +65,51 @@ def run_batch():
                         (ev["event_ts"], ev["id"], row["id"]),
                     )
                     conn.execute("UPDATE cells SET status='free' WHERE id=?", (ev["cell_id"],))
+
+        # 3) 分桶证明固化（同事务）：与搁置集合对撞，分叉即抛 → 整批回滚。
+        #    证明恒带 secondary 键；primary_n 只含主通道，secondary 全在搁置。
+        proof = channel_bucket_proof.materialize_proof(
+            conn, batch_id, primary_events, held_events, now
+        )
+
+        # 4) 批回执：accepted 只统计主通道新增，硬闸禁止其超出分桶 primary_n，
+        #    回执同时固化 primary_n/secondary_n 快照，与证明互证，杜绝计数撒谎。
+        if accepted > proof["primary_n"]:
+            raise channel_bucket_proof.BucketProofError(
+                f"primary accepted={accepted} 超出分桶 primary_n={proof['primary_n']}，"
+                "secondary 疑似计入 primary accepted，整批回滚"
+            )
         conn.execute(
             "INSERT INTO ingest_batches(id, created_at, report_json) VALUES (?,?,?)",
             (
                 batch_id,
                 now,
                 json.dumps(
-                    {"accepted": accepted, "held": held, "total": len(events)},
+                    {
+                        "accepted": accepted,
+                        "held": held,
+                        "total": len(events),
+                        "primary_n": proof["primary_n"],
+                        "secondary_n": proof["secondary_n"],
+                        "held_secondary_ids": proof["held_secondary_ids"],
+                        "channel_bucket_proof_id": batch_id,
+                    },
                     ensure_ascii=False,
                 ),
             ),
         )
         conn.commit()
-        return {"batch_id": batch_id, "accepted": accepted, "held": held, "total": len(events)}
+        return {
+            "batch_id": batch_id,
+            "accepted": accepted,
+            "held": held,
+            "total": len(events),
+            "primary_n": proof["primary_n"],
+            "secondary_n": proof["secondary_n"],
+            "held_secondary_ids": proof["held_secondary_ids"],
+        }
     except Exception:
+        # 硬约束：失败须整批回滚 —— 主桶增量、搁置、证明、回执同生共死
         conn.rollback()
         raise
     finally:
@@ -102,4 +138,3 @@ def _report_ok_stub(extra: dict | None = None) -> dict:
     if extra:
         data.update(extra)
     return data
-
